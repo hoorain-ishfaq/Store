@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signInUser } from "../../lib/auth";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -9,7 +9,10 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false); // ✅ track mount
   const router = useRouter();
+
+  useEffect(() => setMounted(true), []); // ✅ mark as mounted
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -18,9 +21,9 @@ export default function LoginPage() {
       const { user, role, isAdmin } = await signInUser(email, password);
 
       if (isAdmin) {
-        router.push("/admin"); // ✅ redirect admins to /admin
+        router.push("/admin");
       } else {
-        router.push("/"); // ✅ redirect normal users to home
+        router.push("/");
       }
     } catch (error) {
       alert(error.message);
@@ -28,6 +31,9 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // ✅ prevent server-side render mismatch
+  if (!mounted) return null;
 
   return (
     <div className="min-h-screen flex items-center justify-center transition-colors duration-300 bg-gradient-to-br from-gray-100 via-gray-200 to-white dark:from-gray-900 dark:via-gray-800 dark:to-black px-4">

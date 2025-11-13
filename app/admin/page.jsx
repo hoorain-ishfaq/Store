@@ -14,12 +14,18 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
-import Select from "react-select";
+import dynamic from "next/dynamic";
 import Fuse from "fuse.js";
 import { Pagination } from "antd";
+import Sidebar from "../../components/Sidebar";
+
+const Select = dynamic(() => import("react-select"), { ssr: false });
 
 export default function AdminPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
@@ -42,10 +48,10 @@ export default function AdminPage() {
     catalog: "kids",
   });
   const [popupMessage, setPopupMessage] = useState("");
-
-  // Pagination
+  const [addingProduct, setAddingProduct] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(5);
+  const [pageSize] = useState(6);
 
   const categories = [
     { value: "all", label: "All" },
@@ -55,9 +61,10 @@ export default function AdminPage() {
     { value: "perfume", label: "Perfume" },
   ];
 
-  // Fetch products from Firebase
+  // Fetch products
   useEffect(() => {
     const fetchProducts = async () => {
+      setLoadingProducts(true);
       try {
         const catalogs = ["kids", "men", "women", "perfume"];
         let allProducts = [];
@@ -72,6 +79,9 @@ export default function AdminPage() {
         setFilteredProducts(allProducts);
       } catch (err) {
         console.error("Error fetching products:", err);
+        showPopup("Failed to load products.");
+      } finally {
+        setLoadingProducts(false);
       }
     };
     fetchProducts();
@@ -155,6 +165,7 @@ export default function AdminPage() {
     e.preventDefault();
     if (!editProduct) return;
     try {
+      setAddingProduct(true);
       await updateDoc(
         doc(db, "products", "catalog", editProduct.catalog, editProduct.id),
         updatedData
@@ -169,6 +180,8 @@ export default function AdminPage() {
     } catch (err) {
       console.error("Update failed:", err);
       showPopup("Update failed.");
+    } finally {
+      setAddingProduct(false);
     }
   };
 
@@ -179,6 +192,7 @@ export default function AdminPage() {
       return;
     }
     try {
+      setAddingProduct(true);
       const docRef = await addDoc(
         collection(db, "products", "catalog", newProduct.catalog),
         {
@@ -194,45 +208,17 @@ export default function AdminPage() {
     } catch (err) {
       console.error("Add product failed:", err);
       showPopup("Add failed.");
+    } finally {
+      setAddingProduct(false);
     }
   };
 
-  return (
-    <div className="flex min-h-screen -mt-3 -mb-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-all duration-300">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-gray-800  flex flex-col">
-        <nav className="flex-1 mt-4">
-          <ul className="flex flex-col gap-2">
-            <li>
-              <a
-                className="flex items-center gap-3 p-3 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                href="#"
-              >
-                <Home size={18} /> Dashboard
-              </a>
-            </li>
-            <li>
-              <a
-                className="flex items-center gap-3 p-3 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                href="#"
-              >
-                <ShoppingBag size={18} /> Products
-              </a>
-            </li>
-          </ul>
-        </nav>
-        <div className="p-4 border-t dark:border-gray-700">
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded w-full justify-center"
-          >
-            <LogOut size={16} /> Logout
-          </button>
-        </div>
-      </aside>
+  if (!mounted) return null;
 
-      {/* Main Content */}
-      <div className="flex-1 p-8 -mt-6 -mb-10">
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-all duration-300">
+      <Sidebar />
+      <div className="flex-1 p-8">
         {/* Header */}
         <div className="flex justify-between items-center mb-4 mt-6">
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
@@ -248,13 +234,23 @@ export default function AdminPage() {
 
         {/* Search & Filter */}
         <div className="flex gap-4 mb-6 items-center">
-          <input
-            type="text"
-            placeholder="Search products..."
-            className="flex-1 p-2 rounded border dark:bg-gray-700 dark:border-gray-600"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search products..."
+              className="w-full p-2 rounded border dark:bg-gray-700 dark:border-gray-600 pr-10"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded-full hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200"
+              >
+                ✕
+              </button>
+            )}
+          </div>
           <div className="w-64">
             <Select
               options={categories}
@@ -286,44 +282,58 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {currentProducts.map((product) => (
-                <tr
-                  key={product.id}
-                  className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  <td className="px-4 py-3 w-20 h-20 relative">
-                    <Image
-                      src={getImageUrl(product.image)}
-                      alt={product.name}
-                      fill
-                      className="object-cover rounded"
-                    />
-                  </td>
-                  <td className="px-4 py-3">{product.name}</td>
-                  <td className="px-4 py-3">Rs. {product.price}</td>
-                  <td className="px-4 py-3 capitalize">{product.catalog}</td>
-                  <td className="px-4 py-3 space-x-2">
-                    <button
-                      onClick={() => handleEdit(product)}
-                      className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setDeleteProduct(product)}
-                      className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={() => setViewProduct(product)}
-                      className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
-                    >
-                      View
-                    </button>
+              {loadingProducts ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-56">
+                    <Loader />
                   </td>
                 </tr>
-              ))}
+              ) : currentProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-10">
+                    No products found.
+                  </td>
+                </tr>
+              ) : (
+                currentProducts.map((product) => (
+                  <tr
+                    key={product.id}
+                    className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <td className="px-4 py-3 w-20 h-20 relative">
+                      <Image
+                        src={getImageUrl(product.image)}
+                        alt={product.name}
+                        fill
+                        className="object-cover rounded"
+                      />
+                    </td>
+                    <td className="px-4 py-3">{product.name}</td>
+                    <td className="px-4 py-3">Rs. {product.price}</td>
+                    <td className="px-4 py-3 capitalize">{product.catalog}</td>
+                    <td className="px-4 py-3 space-x-2">
+                      <button
+                        onClick={() => handleEdit(product)}
+                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setDeleteProduct(product)}
+                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setViewProduct(product)}
+                        className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -340,16 +350,17 @@ export default function AdminPage() {
         </div>
 
         {/* Modals */}
-        {addProduct && (
+        {mounted && addProduct && (
           <AddProductModal
             categories={categories}
             newProduct={newProduct}
             setNewProduct={setNewProduct}
             onClose={() => setAddProduct(false)}
             handleAddProduct={handleAddProduct}
+            loading={addingProduct}
           />
         )}
-        {editProduct && (
+        {mounted && editProduct && (
           <EditProductModal
             categories={categories}
             editProduct={editProduct}
@@ -357,16 +368,17 @@ export default function AdminPage() {
             setUpdatedData={setUpdatedData}
             onClose={() => setEditProduct(null)}
             handleSaveEdit={handleSaveEdit}
+            loading={addingProduct}
           />
         )}
-        {deleteProduct && (
+        {mounted && deleteProduct && (
           <DeleteProductModal
             deleteProduct={deleteProduct}
             onClose={() => setDeleteProduct(null)}
             confirmDelete={confirmDelete}
           />
         )}
-        {viewProduct && (
+        {mounted && viewProduct && (
           <ViewProductModal
             viewProduct={viewProduct}
             onClose={() => setViewProduct(null)}
@@ -377,6 +389,13 @@ export default function AdminPage() {
   );
 }
 
+const Loader = () => (
+  <div className="flex justify-center items-center space-x-2">
+    <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    <span>Loading...</span>
+  </div>
+);
+
 /* ---------- Modals ---------- */
 const AddProductModal = ({
   categories,
@@ -384,25 +403,26 @@ const AddProductModal = ({
   setNewProduct,
   onClose,
   handleAddProduct,
+  loading,
 }) => (
   <Modal title="Add Product" onClose={onClose}>
     <form onSubmit={handleAddProduct} className="space-y-4">
       <Input
         placeholder="Name"
-        value={newProduct.name}
+        value={newProduct.name || ""}
         onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
       />
       <Input
         type="number"
         placeholder="Price"
-        value={newProduct.price}
+        value={newProduct.price || ""}
         onChange={(e) =>
           setNewProduct({ ...newProduct, price: e.target.value })
         }
       />
       <Input
         placeholder="Image URL"
-        value={newProduct.image}
+        value={newProduct.image || ""}
         onChange={(e) =>
           setNewProduct({ ...newProduct, image: e.target.value })
         }
@@ -416,7 +436,12 @@ const AddProductModal = ({
       />
       <div className="flex justify-end gap-3">
         <Button text="Cancel" color="gray" onClick={onClose} />
-        <Button text="Save" color="green" type="submit" />
+        <Button
+          text={loading ? "Saving..." : "Save"}
+          color="green"
+          type="submit"
+          disabled={loading}
+        />
       </div>
     </form>
   </Modal>
@@ -429,6 +454,7 @@ const EditProductModal = ({
   setUpdatedData,
   onClose,
   handleSaveEdit,
+  loading,
 }) => (
   <Modal title={`Edit: ${editProduct.name}`} onClose={onClose}>
     <form onSubmit={handleSaveEdit} className="space-y-4">
@@ -440,11 +466,13 @@ const EditProductModal = ({
         }
       />
       <Input
-        type="number"
+        type="text"
         placeholder="Price"
-        value={updatedData.price || editProduct.price || ""}
+        value={
+          updatedData.price !== "" ? updatedData.price : editProduct.price || ""
+        }
         onChange={(e) =>
-          setUpdatedData({ ...updatedData, price: e.target.value })
+          setUpdatedData({ ...updatedData, price: Number(e.target.value) })
         }
       />
       <Input
@@ -456,14 +484,22 @@ const EditProductModal = ({
       />
       <Select
         options={categories.filter((c) => c.value !== "all")}
-        value={categories.find((c) => c.value === updatedData.catalog)}
+        value={categories.find((c) => c.value === updatedData.catalog) || null}
         onChange={(selected) =>
-          setUpdatedData({ ...updatedData, catalog: selected.value })
+          setUpdatedData({
+            ...updatedData,
+            catalog: selected ? selected.value : "",
+          })
         }
       />
       <div className="flex justify-end gap-3">
         <Button text="Cancel" color="gray" onClick={onClose} />
-        <Button text="Save" color="blue" type="submit" />
+        <Button
+          text={loading ? "Saving..." : "Save"}
+          color="blue"
+          type="submit"
+          disabled={loading}
+        />
       </div>
     </form>
   </Modal>
@@ -507,7 +543,6 @@ const ViewProductModal = ({ viewProduct, onClose }) => (
   </Modal>
 );
 
-/* ---------- Reusable Components ---------- */
 const Modal = ({ title, children, onClose, hideCloseButton = false }) => (
   <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50">
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 w-96 relative">

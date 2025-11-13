@@ -13,8 +13,11 @@ import { usePathname } from "next/navigation";
 export default function RootLayout({ children }) {
   const pathname = usePathname();
 
-  // Hide Navbar/Footer on login and signup pages
-  const hideLayout = pathname === "/login" || pathname === "/signup";
+  // Hide Navbar/Footer on login, signup, and admin pages
+  const hideLayout =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname.startsWith("/admin"); // <-- hide for all admin pages
 
   // Adjust main padding only when navbar is visible
   const mainClassName = hideLayout ? "min-h-screen" : "mt-24 min-h-screen";
