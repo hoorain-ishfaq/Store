@@ -21,7 +21,7 @@ export default function LoginPage() {
       const { user, role, isAdmin } = await signInUser(email, password);
 
       if (isAdmin) {
-        router.push("/admin");
+        router.push("/dashboard");
       } else {
         router.push("/");
       }
@@ -32,7 +32,7 @@ export default function LoginPage() {
     }
   };
 
-  // ✅ prevent server-side render mismatch
+  //  prevent server-side render mismatch
   if (!mounted) return null;
 
   return (

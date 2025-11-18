@@ -14,23 +14,45 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
+import { storage } from "../../lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import dynamic from "next/dynamic";
 import Fuse from "fuse.js";
 import { Pagination } from "antd";
 import Sidebar from "../../components/Sidebar";
 
 const Select = dynamic(() => import("react-select"), { ssr: false });
+// ---------- DEBOUNCE FUNCTION
+function debounce(func, delay) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer); // cancel previous call
+    timer = setTimeout(() => {
+      func.apply(this, args); // call function after delay
+    }, delay);
+  };
+}
 
-export default function AdminPage() {
+export default function ProductPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(220);
 
   useEffect(() => setMounted(true), []);
+  const [searchInput, setSearchInput] = useState(""); // immediate input from user
+  const [searchQuery, setSearchQuery] = useState(""); // debounced query for search
+  // ---------- Debounced search ----------
+  const debouncedSetSearchQuery = useMemo(
+    () =>
+      debounce((value) => {
+        setSearchQuery(value); // triggers Fuse.js search
+      }, 500), // 500ms delay
+    []
+  );
 
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [editProduct, setEditProduct] = useState(null);
   const [deleteProduct, setDeleteProduct] = useState(null);
   const [addProduct, setAddProduct] = useState(false);
@@ -51,7 +73,7 @@ export default function AdminPage() {
   const [addingProduct, setAddingProduct] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(6);
+  const [pageSize] = useState(5);
 
   const categories = [
     { value: "all", label: "All" },
@@ -164,17 +186,41 @@ export default function AdminPage() {
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editProduct) return;
+
     try {
       setAddingProduct(true);
+
+      let finalImageUrl = editProduct.image;
+
+      // If user selected a new file → upload to Firebase Storage
+      if (updatedData.imageFile) {
+        const imageRef = ref(
+          storage,
+          `products/${Date.now()}-${updatedData.imageFile.name}`
+        );
+
+        await uploadBytes(imageRef, updatedData.imageFile);
+        finalImageUrl = await getDownloadURL(imageRef);
+      }
+
       await updateDoc(
         doc(db, "products", "catalog", editProduct.catalog, editProduct.id),
-        updatedData
+        {
+          name: updatedData.name,
+          price: updatedData.price,
+          catalog: updatedData.catalog,
+          image: finalImageUrl,
+        }
       );
+
       setProducts((prev) =>
         prev.map((p) =>
-          p.id === editProduct.id ? { ...p, ...updatedData } : p
+          p.id === editProduct.id
+            ? { ...p, ...updatedData, image: finalImageUrl }
+            : p
         )
       );
+
       setEditProduct(null);
       showPopup("Product updated successfully!");
     } catch (err) {
@@ -187,27 +233,48 @@ export default function AdminPage() {
 
   const handleAddProduct = async (e) => {
     e.preventDefault();
-    if (!newProduct.name || !newProduct.price || !newProduct.image) {
-      alert("Please fill all fields!");
+
+    if (!newProduct.name || !newProduct.price || !newProduct.imageFile) {
+      alert("All fields required");
       return;
     }
+
     try {
       setAddingProduct(true);
+
+      // Upload image
+      const imageRef = ref(
+        storage,
+        `products/${Date.now()}-${newProduct.imageFile.name}`
+      );
+
+      await uploadBytes(imageRef, newProduct.imageFile);
+      const imageUrl = await getDownloadURL(imageRef);
+
       const docRef = await addDoc(
         collection(db, "products", "catalog", newProduct.catalog),
         {
           name: newProduct.name,
           price: newProduct.price,
-          image: newProduct.image,
+          image: imageUrl,
         }
       );
-      setProducts((prev) => [...prev, { id: docRef.id, ...newProduct }]);
+
+      // PREPEND → NEWEST PRODUCT FIRST
+      setProducts((prev) => [
+        { id: docRef.id, ...newProduct, image: imageUrl },
+        ...prev,
+      ]);
+
+      // Go to page 1
+      setCurrentPage(1);
+
       setAddProduct(false);
       setNewProduct({ name: "", price: "", image: "", catalog: "kids" });
       showPopup("Product added successfully!");
-    } catch (err) {
-      console.error("Add product failed:", err);
-      showPopup("Add failed.");
+    } catch (error) {
+      console.error(error);
+      showPopup("Add failed");
     } finally {
       setAddingProduct(false);
     }
@@ -218,10 +285,10 @@ export default function AdminPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-all duration-300">
       <Sidebar />
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-8 ml-[220px] transition-all duration-300">
         {/* Header */}
         <div className="flex justify-between items-center mb-4 mt-6">
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <h1 className="text-3xl font-bold">Products</h1>
           <div className="flex gap-4">
             <button
               onClick={() => setAddProduct(true)}
@@ -237,14 +304,21 @@ export default function AdminPage() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search products..."
               className="w-full p-2 rounded border dark:bg-gray-700 dark:border-gray-600 pr-10"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search products..."
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value); // update input immediately
+                debouncedSetSearchQuery(e.target.value); // update searchQuery after 500ms
+              }}
             />
-            {searchQuery && (
+
+            {searchInput && (
               <button
-                onClick={() => setSearchQuery("")}
+                onClick={() => {
+                  setSearchInput(""); // immediately clear input
+                  setSearchQuery(""); // immediately clear search results
+                }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded-full hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200"
               >
                 ✕
@@ -271,7 +345,7 @@ export default function AdminPage() {
 
         {/* Products Table */}
         <div className="overflow-x-auto">
-          <table className="min-w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden">
+          <table className="min-w-full  bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden border-separate border-spacing-y-1">
             <thead className="bg-gray-100 dark:bg-gray-700">
               <tr>
                 <th className="px-4 py-3 text-left">Image</th>
@@ -420,13 +494,56 @@ const AddProductModal = ({
           setNewProduct({ ...newProduct, price: e.target.value })
         }
       />
-      <Input
-        placeholder="Image URL"
-        value={newProduct.image || ""}
-        onChange={(e) =>
-          setNewProduct({ ...newProduct, image: e.target.value })
-        }
-      />
+      {/* Image Upload / Preview Section */}
+      <div className="flex flex-col items-center gap-3">
+        {/* If NO image → show Upload button */}
+        {!newProduct.image && (
+          <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded-md">
+            Upload Image
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const previewURL = URL.createObjectURL(file);
+
+                setNewProduct({
+                  ...newProduct,
+                  image: previewURL,
+                  imageFile: file,
+                });
+              }}
+            />
+          </label>
+        )}
+        {newProduct.image && (
+          <div className="relative">
+            <div className="w-28 h-28 rounded-full overflow-hidden border">
+              <img
+                src={newProduct.image}
+                className="w-full h-full object-cover"
+                alt="Preview"
+              />
+            </div>
+            <button
+              onClick={() =>
+                setNewProduct({
+                  ...newProduct,
+                  image: "",
+                  imageFile: null,
+                })
+              }
+              className="absolute top-2 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+
       <Select
         options={categories.filter((c) => c.value !== "all")}
         value={categories.find((c) => c.value === newProduct.catalog)}
@@ -475,13 +592,40 @@ const EditProductModal = ({
           setUpdatedData({ ...updatedData, price: Number(e.target.value) })
         }
       />
-      <Input
-        placeholder="Image URL"
-        value={updatedData.image || editProduct.image || ""}
-        onChange={(e) =>
-          setUpdatedData({ ...updatedData, image: e.target.value })
-        }
-      />
+      {/* Image Preview + Upload */}
+      <div className="flex flex-col items-center gap-3">
+        {/* Circle Preview */}
+        <div className="w-28 h-28 rounded-full overflow-hidden border">
+          <img
+            src={updatedData.image || editProduct.image || "/no-image.jpg"}
+            className="w-full h-full object-cover"
+            alt="preview"
+          />
+        </div>
+
+        {/* Upload Button */}
+        <label className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-md">
+          Upload Image
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+
+              const preview = URL.createObjectURL(file);
+
+              setUpdatedData({
+                ...updatedData,
+                image: preview, // show preview
+                imageFile: file, // real file saved for upload
+              });
+            }}
+          />
+        </label>
+      </div>
+
       <Select
         options={categories.filter((c) => c.value !== "all")}
         value={categories.find((c) => c.value === updatedData.catalog) || null}
@@ -505,17 +649,38 @@ const EditProductModal = ({
   </Modal>
 );
 
-const DeleteProductModal = ({ deleteProduct, onClose, confirmDelete }) => (
-  <Modal title="Confirm Delete" onClose={onClose}>
-    <p className="text-center mb-4">
-      Are you sure you want to delete <b>{deleteProduct.name}</b>?
-    </p>
-    <div className="flex justify-center gap-3">
-      <Button text="Cancel" color="gray" onClick={onClose} />
-      <Button text="Delete" color="red" onClick={confirmDelete} />
-    </div>
-  </Modal>
-);
+const DeleteProductModal = ({ deleteProduct, onClose, confirmDelete }) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleDelete = async () => {
+    try {
+      setLoading(true);
+      await confirmDelete(); // call delete function from parent
+      onClose(); // close modal after successful deletion
+    } catch (err) {
+      console.error("Delete error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal title="Confirm Delete" onClose={onClose}>
+      <p className="text-center mb-4">
+        Are you sure you want to delete <b>{deleteProduct.name}</b>?
+      </p>
+      <div className="flex justify-center gap-3">
+        <Button text="Cancel" color="gray" onClick={onClose} />
+        <Button
+          text={loading ? "Deleting..." : "Delete"}
+          color="red"
+          onClick={handleDelete}
+          disabled={loading}
+        />
+      </div>
+    </Modal>
+  );
+};
 
 const ViewProductModal = ({ viewProduct, onClose }) => (
   <Modal title={viewProduct.name} hideCloseButton>

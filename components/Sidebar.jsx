@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ChevronFirst,
   ChevronLast,
   BarChart3,
   ShoppingCart,
-  Users,
+  Settings,
   Package,
   Home,
   LogOut,
@@ -17,13 +17,13 @@ import {
 } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import Image from "next/image";
 
-export default function Sidebar() {
+export default function Sidebar({ setSidebarWidth }) {
   const [isOpen, setIsOpen] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const router = useRouter();
 
+  // Load saved theme
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme === "dark") {
@@ -32,6 +32,7 @@ export default function Sidebar() {
     }
   }, []);
 
+  // Update theme dynamically
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add("dark");
@@ -42,7 +43,10 @@ export default function Sidebar() {
     }
   }, [darkMode]);
 
-  const toggleSidebar = () => setIsOpen(!isOpen);
+  const toggleSidebar = () => {
+    setIsOpen(!isOpen);
+    if (setSidebarWidth) setSidebarWidth(!isOpen ? 220 : 80); // Pass width to parent
+  };
   const toggleTheme = () => setDarkMode(!darkMode);
 
   const handleLogout = async () => {
@@ -55,22 +59,22 @@ export default function Sidebar() {
   };
 
   const menuItems = [
-    { icon: <Home size={22} />, text: "Home" },
-    { icon: <BarChart3 size={22} />, text: "Analytics" },
-    { icon: <ShoppingCart size={22} />, text: "Orders" },
-    { icon: <Users size={22} />, text: "Customers" },
-    { icon: <Package size={22} />, text: "Products" },
+    { icon: <Home size={22} />, text: "Dashboard", path: "/dashboard" },
+    { icon: <BarChart3 size={22} />, text: "Analytics", path: "/analytics" },
+    { icon: <ShoppingCart size={22} />, text: "Orders", path: "/orders" },
+    { icon: <Package size={22} />, text: "Products", path: "/products" },
+    { icon: <Settings size={22} />, text: "Settings", path: "/settings" },
   ];
 
   return (
     <motion.aside
       animate={{ width: isOpen ? 220 : 80 }}
       transition={{ duration: 0.3 }}
-      className="bg-white dark:bg-gray-900 dark:text-white text-black flex flex-col justify-between p-4 h-screen shadow-md"
+      className="fixed top-0 left-0 h-screen bg-white dark:bg-gray-900 dark:text-white text-black flex flex-col justify-between p-4 shadow-md z-50"
     >
       <div>
+        {/* Logo */}
         <div className="relative flex items-center justify-between mb-6">
-          {/* Logo with animation */}
           <motion.div
             animate={{ width: isOpen ? 240 : 40 }}
             transition={{ duration: 0.3 }}
@@ -80,69 +84,63 @@ export default function Sidebar() {
               <motion.img
                 key="full-logo"
                 src="/images/noir-logolarge.jpg"
-                alt="Noirwear Logo"
+                alt="Logo"
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.3 }}
-                className="w-60 h-auto -mt-7 -mb-8 cursor-pointer select-none object-contain"
+                className="w-60 h-auto cursor-pointer select-none object-contain"
               />
             ) : (
               <motion.img
                 key="small-logo"
                 src="/images/n-logosmall.jpg"
-                alt="Noirwear Icon"
+                alt="Logo"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.3 }}
-                className="w-24 mt-4 left-2 h-auto mx-auto cursor-pointer select-none object-contain"
+                className="w-24 h-auto mx-auto cursor-pointer select-none object-contain"
               />
             )}
           </motion.div>
 
-          {/* Collapse button */}
           {isOpen && (
             <motion.button
               onClick={toggleSidebar}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
               className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition"
             >
               <ChevronFirst size={24} />
             </motion.button>
           )}
         </div>
-
-        {/* ChevronLast button when sidebar is closed */}
         {!isOpen && (
           <motion.button
             onClick={toggleSidebar}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3 }}
-            className="absolute top-1/2 left-12 transform -translate-y-1/2 translate-x-1/2 p-2 rounded-r-md 
-      dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+            className="absolute top-1/2 -right-3 transform -translate-y-1/2 
+               p-2 rounded-md bg-white dark:bg-gray-800 shadow 
+               hover:bg-gray-200 dark:hover:bg-gray-700 transition"
           >
             <ChevronLast size={24} />
           </motion.button>
         )}
 
-        <nav className="flex flex-col gap-3">
+        {/* Menu Items */}
+        <nav className="flex flex-col gap-3 mt-4">
           {menuItems.map((item, index) => (
             <SidebarItem
               key={index}
               icon={item.icon}
               text={item.text}
+              path={item.path}
               isOpen={isOpen}
             />
           ))}
         </nav>
       </div>
 
+      {/* Theme + Logout */}
       <div className="flex flex-col gap-3 mt-6">
         <div
           onClick={toggleTheme}
@@ -158,11 +156,11 @@ export default function Sidebar() {
 
         <div
           onClick={handleLogout}
-          className="flex items-center gap-3 p-2 rounded-md bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
+          className="flex items-center gap-3 p-2 rounded-md bg-gray-50 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 cursor-pointer transition-colors"
         >
           <LogOut size={22} />
           {isOpen && (
-            <span className="text-lg font-light cursor-pointer">
+            <span className="text-lg font-light cursor-pointer dark:text-gray-200">
               <strong>Logout</strong>
             </span>
           )}
@@ -172,9 +170,21 @@ export default function Sidebar() {
   );
 }
 
-function SidebarItem({ icon, text, isOpen }) {
+// SidebarItem Component
+function SidebarItem({ icon, text, path, isOpen }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const isActive = pathname === path;
+
   return (
-    <div className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+    <div
+      onClick={() => router.push(path)}
+      className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
+        isActive
+          ? "bg-gray-200 dark:bg-gray-700 font-semibold"
+          : "hover:bg-gray-200 dark:hover:bg-gray-700"
+      }`}
+    >
       {icon}
       {isOpen && <span className="text-sm font-medium">{text}</span>}
     </div>

@@ -17,6 +17,11 @@ export default function RootLayout({ children }) {
   const hideLayout =
     pathname === "/login" ||
     pathname === "/signup" ||
+    pathname === "/products" ||
+    pathname === "/orders" ||
+    pathname === "/dashboard" ||
+    pathname === "/analytics" ||
+    pathname === "/settings" ||
     pathname.startsWith("/admin"); // <-- hide for all admin pages
 
   // Adjust main padding only when navbar is visible
